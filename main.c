@@ -219,7 +219,7 @@ static void adv_evt_handler(ble_adv_evt_t ble_adv_evt) {
 		ble_gap_irk_t whitelist_irks[BLE_GAP_WHITELIST_ADDR_MAX_COUNT];
 		uint32_t addr_cnt = BLE_GAP_WHITELIST_ADDR_MAX_COUNT;
 		uint32_t irk_cnt = BLE_GAP_WHITELIST_ADDR_MAX_COUNT;
-		APP_ERROR_CHECK(pm_whitelist_get(whitelist_addrs, &addr_cnt, whitelist_irks,  &irk_cnt));
+		APP_ERROR_CHECK(pm_whitelist_get(whitelist_addrs, &addr_cnt, whitelist_irks, &irk_cnt));
 		NRF_LOG_INFO("Whitelist response with %d addresses and %d IRKs", addr_cnt, irk_cnt);
 
 		// Respond to advertising module with whitelist.
@@ -571,8 +571,8 @@ int main(void) {
 		adv_start();
 	}
 
-    // Enter main loop.
-    NRF_LOG_INFO("ErgoBlue firmware is running");
+	// Enter main loop.
+	NRF_LOG_INFO("ErgoBlue firmware is running");
 	while (true) {
 		APP_ERROR_CHECK(nrf_ble_lesc_request_handler());
 		if (NRF_LOG_PROCESS() == false) {
