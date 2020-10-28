@@ -18,21 +18,48 @@
 #include "nrf_log_ctrl.h"
 #include "nrf_log_default_backends.h"
 
-// Define GPIO pins for columns and rows. TODO TODO TODO adafruit board
+// Define GPIO pins for columns and rows. TODO TODO TODO adafruit board, also
+// want to do 16 byte format? reverse cols for right and add column offset?
+
+// TODO TODO TODO left, adafruit
 // static uint8_t row_pins[] = {5, 30, 28, 2, 3, 4};
 // static uint8_t col_pins[] = {11, 12, 7, 26, 27, 6, 8};
 // #define MATRIX_ANODE_COL
+// #define COL_OFFSET 0
+// #define COL_TOTAL 14
+// #define DEVICE_NAME "ErgoBlue Left"
 
-// Define GPIO pins for columns and rows. TODO TODO TODO nordic dongle
+// TODO TODO TODO right, adafruit
+// static uint8_t row_pins[] = {5, 30, 28, 2, 3, 4};
+// static uint8_t col_pins[] = {8, 6, 27, 26, 7, 12, 11};
+// #define MATRIX_ANODE_COL
+// #define COL_OFFSET 7
+// #define COL_TOTAL 14
+// #define DEVICE_NAME "ErgoBlue Right"
+
+// TODO TODO TODO left, dongle, old
+// static uint8_t row_pins[] = {13, 15, 17, 20, 22, 24};
+// static uint8_t col_pins[] = {10, 42, 45, 47, 2, 29, 9};
+// #define MATRIX_ANODE_COL
+// #define COL_OFFSET 0
+// #define COL_TOTAL 14
+// #define DEVICE_NAME "ErgoBlue Left"
+
+// TODO TODO TODO left, dongle, new
 // static uint8_t row_pins[] = {20, 22, 24, 32, 9, 10};
 // static uint8_t col_pins[] = {2, 47, 45, 42, 13, 15, 17};
-// #define MATRIX_ANODE_ROW
+// #define COL_OFFSET 0
+// #define COL_TOTAL 14
+// #define DEVICE_NAME "ErgoBlue Left"
 
-// Define GPIO pins for columns and rows. TODO TODO TODO fanstel nrf52810
-static uint8_t row_pins[] = {10, 11, 12, 13, 14, 15};
-static uint8_t col_pins[] = {24, 25, 26, 27, 28, 29, 30};
+// TODO TODO TODO right, dongle, new
+static uint8_t row_pins[] = {20, 22, 24, 32, 9, 10};
+static uint8_t col_pins[] = {17, 15, 13, 42, 45, 47, 2};
+#define COL_OFFSET 7
+#define COL_TOTAL 14
+#define DEVICE_NAME "ErgoBlue Right"
 
-// Define macros for size of matrix
+// Define macros for size of matrix (scanning only)
 #define COL_COUNT sizeof(col_pins)
 #define ROW_COUNT sizeof(row_pins)
 
@@ -58,7 +85,7 @@ static uint8_t col_pins[] = {24, 25, 26, 27, 28, 29, 30};
 // past bitmaps are stored and is used for debouncing. The bitmap length must be
 // large enough for the keyboard matrix.
 #define BITMAP_COUNT 5
-#define BITMAP_LEN 6
+#define BITMAP_LEN 16
 static uint8_t bitmap[BITMAP_COUNT][BITMAP_LEN] = {};
 static int bitmap_index = 0;
 
@@ -112,18 +139,10 @@ static void adv_start(void) {
 }
 
 static void gap_init(void) {
-	// Construct device name using MAC address.
-	ble_gap_addr_t ble_addr;
-	sd_ble_gap_addr_get(&ble_addr);
-	char name[21];
-	char *fmt = "ErgoBlue %02x%02x%02x%02x%02x%02x";
-	uint8_t *addr = ble_addr.addr;
-	sprintf(name, fmt, addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
-
 	// Set device name.
 	ble_gap_conn_sec_mode_t sec_mode;
 	BLE_GAP_CONN_SEC_MODE_SET_OPEN(&sec_mode);
-	APP_ERROR_CHECK(sd_ble_gap_device_name_set(&sec_mode, (const uint8_t *) name, sizeof(name)));
+	APP_ERROR_CHECK(sd_ble_gap_device_name_set(&sec_mode, (const uint8_t *)DEVICE_NAME, strlen(DEVICE_NAME)));
 
 	// Designate device as keyboard.
 	APP_ERROR_CHECK(sd_ble_gap_appearance_set(BLE_APPEARANCE_HID_KEYBOARD));
@@ -245,14 +264,14 @@ static void adv_init(void) {
 
 		// Use whitelist to only allow connection from a single central. TODO
 		// TODO TODO directed not useful against a malicious central. also think
-		// about process of adding additional centrals.
-		.config.ble_adv_whitelist_enabled = true,
+		// about process of adding additional centrals. TODO TODO TODO
+		// .config.ble_adv_whitelist_enabled = true,
 
 		// Define advertising interval and duration. TODO TODO TODO duration
 		// will change depending on context.
 		.config.ble_adv_fast_enabled = true,
 		.config.ble_adv_fast_interval = MSEC_TO_UNITS(25, UNIT_0_625_MS),
-		.config.ble_adv_fast_timeout = MSEC_TO_UNITS(3000, UNIT_10_MS),
+		.config.ble_adv_fast_timeout = MSEC_TO_UNITS(10000, UNIT_10_MS),
 	};
 	APP_ERROR_CHECK(ble_advertising_init(&ble_adv, &init));
 	ble_advertising_conn_cfg_tag_set(&ble_adv, APP_BLE_CONN_CFG_TAG);
@@ -298,6 +317,13 @@ static void pm_evt_handler(pm_evt_t const *p_evt) {
 		}
 		break;
 
+	// TODO TODO TODO temporary allow arbitrary repairing.
+	case PM_EVT_CONN_SEC_CONFIG_REQ: {
+		pm_conn_sec_config_t conn_sec_config = {.allow_repairing = true};
+		pm_conn_sec_config_reply(p_evt->conn_handle, &conn_sec_config);
+		break;
+	}
+
 	default:
 		break;
 
@@ -336,12 +362,13 @@ static void send_hid_bitmap(uint8_t *data) {
 }
 
 static void scan_hid_handler(void *p_context) {
-	// Scan matrix and set the appropriate bits.
+	// Scan matrix and set the appropriate bits. TODO TODO TODO col_offset only
+	// for i (not for j) on left
 	for (int i = 0; i < ROW_COUNT; i++) {
 		MATRIX_ROW_SET(row_pins[i]);
 		for (int j = 0; j < COL_COUNT; j++) {
 			if (MATRIX_COL_IS_SET(col_pins[j])) {
-				uint8_t bit = i*COL_COUNT + j;
+				uint8_t bit = i*COL_TOTAL + COL_OFFSET + j;
 				bitmap[bitmap_index][bit / 8] |= 1 << (bit % 8);
 			}
 		}
@@ -421,7 +448,7 @@ static void saadc_buffer_convert(nrf_saadc_input_t pin, nrf_saadc_value_t *value
 static void saadc_evt_handler(nrfx_saadc_evt_t const *p_event) {
 	// When calibration finishes, read VDD into the battery voltage.
 	if (p_event->type == NRFX_SAADC_EVT_CALIBRATEDONE) {
-		saadc_buffer_convert(NRF_SAADC_INPUT_VDD, &battery_level);
+		saadc_buffer_convert(NRF_SAADC_INPUT_VDDHDIV5, &battery_level);
 		return;
 
 	}
@@ -433,7 +460,7 @@ static void saadc_evt_handler(nrfx_saadc_evt_t const *p_event) {
 	if (p_event->type == NRFX_SAADC_EVT_DONE) {
 		saadc_state++;
 		if (saadc_state == 1) {
-			saadc_buffer_convert(NRF_SAADC_INPUT_AIN0, &solar_level);
+			saadc_buffer_convert(NRF_SAADC_INPUT_AIN7, &solar_level);
 		} else if (saadc_state == 2) {
 			uint64_t i = ((uint64_t) 1 << 47) | (battery_level << 16) | solar_level;
 			uint8_t data[INPUT_REPORT_LEN];
@@ -445,6 +472,9 @@ static void saadc_evt_handler(nrfx_saadc_evt_t const *p_event) {
 }
 
 static void battery_handler(void *p_context) {
+	// TODO TODO TODO figure out how to handle
+	return;
+
 	// Calibrate to initialize reading. TODO TODO TODO only if connected
 	if (conn_handle != BLE_CONN_HANDLE_INVALID) {
 		APP_ERROR_CHECK(nrfx_saadc_calibrate_offset());
